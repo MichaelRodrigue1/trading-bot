@@ -1,30 +1,51 @@
 import dotenv from 'dotenv';
+import { BinanceExchange } from './exchange/binance';
+import { logger } from './utils/logger';
 
 dotenv.config();
 
 class TradingBot {
   private isRunning: boolean = false;
+  private exchange: BinanceExchange;
   
   constructor() {
-    console.log('Trading Bot initialized');
+    const config = {
+      apiKey: process.env.BINANCE_API_KEY || '',
+      secretKey: process.env.BINANCE_SECRET_KEY || '',
+      sandbox: process.env.NODE_ENV !== 'production'
+    };
+    
+    this.exchange = new BinanceExchange(config);
+    logger.info('Trading Bot initialized');
   }
 
   async start() {
     this.isRunning = true;
-    console.log('Starting trading bot...');
+    logger.info('Starting trading bot...');
     
-    // TODO: Implement exchange connection
-    // TODO: Add trading strategies
-    // TODO: Setup market data monitoring
-    
-    while (this.isRunning) {
-      await this.sleep(1000);
+    try {
+      await this.exchange.connect();
+      
+      const tradingPair = process.env.TRADING_PAIR || 'BTCUSDT';
+      
+      while (this.isRunning) {
+        if (process.env.DRY_RUN === 'true') {
+          const marketData = await this.exchange.getMarketData(tradingPair);
+          logger.info(`${tradingPair} price: $${marketData.price}`);
+        }
+        
+        await this.sleep(5000);
+      }
+    } catch (error) {
+      logger.error('Trading bot error:', error);
+      this.stop();
     }
   }
 
   stop() {
     this.isRunning = false;
-    console.log('Trading bot stopped');
+    this.exchange.disconnect();
+    logger.info('Trading bot stopped');
   }
 
   private sleep(ms: number): Promise<void> {
