@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { BinanceExchange } from './exchange/binance';
+import { SMACrossoverStrategy } from './strategies/sma-crossover';
 import { logger } from './utils/logger';
 
 dotenv.config();
@@ -7,6 +8,7 @@ dotenv.config();
 class TradingBot {
   private isRunning: boolean = false;
   private exchange: BinanceExchange;
+  private strategy: SMACrossoverStrategy;
   
   constructor() {
     const config = {
@@ -16,6 +18,11 @@ class TradingBot {
     };
     
     this.exchange = new BinanceExchange(config);
+    
+    const fastPeriod = parseInt(process.env.EMA_FAST || '12');
+    const slowPeriod = parseInt(process.env.EMA_SLOW || '26');
+    this.strategy = new SMACrossoverStrategy(fastPeriod, slowPeriod);
+    
     logger.info('Trading Bot initialized');
   }
 
@@ -27,14 +34,26 @@ class TradingBot {
       await this.exchange.connect();
       
       const tradingPair = process.env.TRADING_PAIR || 'BTCUSDT';
+      const isDryRun = process.env.DRY_RUN === 'true';
       
       while (this.isRunning) {
-        if (process.env.DRY_RUN === 'true') {
-          const marketData = await this.exchange.getMarketData(tradingPair);
-          logger.info(`${tradingPair} price: $${marketData.price}`);
+        const marketData = await this.exchange.getMarketData(tradingPair);
+        logger.debug(`${tradingPair} price: $${marketData.price}`);
+        
+        const signal = this.strategy.addPriceData(marketData);
+        
+        if (signal.action !== 'HOLD') {
+          logger.info(`Trading signal: ${signal.action} (confidence: ${signal.confidence.toFixed(2)})`);
+          
+          if (!isDryRun && process.env.TRADING_ENABLED === 'true') {
+            // TODO: Implement actual trading logic
+            logger.info('Would execute trade here in live mode');
+          } else {
+            logger.info(`DRY RUN: Would ${signal.action} ${tradingPair}`);
+          }
         }
         
-        await this.sleep(5000);
+        await this.sleep(30000); // Check every 30 seconds
       }
     } catch (error) {
       logger.error('Trading bot error:', error);
